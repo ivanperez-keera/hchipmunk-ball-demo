@@ -9,7 +9,7 @@ module Main where
 import Control.Concurrent
 import Control.Monad
 import Graphics.UI.GLUT hiding (position, Position, scale)
-import Physics.Hipmunk hiding (Position)
+import Physics.Hipmunk hiding (Position) -- as Hipmunk -- (CpFloat, Vector(..), Body, body)
 import Statistics
 import System.Random (randomRIO)
 import Unsafe.Coerce (unsafeCoerce)
@@ -25,7 +25,7 @@ main = do
 
     -- Enabling performance information display.
     fpsStat <- newFPS
-  
+
     -- Create outside borders.
     let borders = [ ((0.01, 0.00), (1.29, 0.00)),
                     ((0.01, 0.00), (0.01, 1.00)),
@@ -40,7 +40,9 @@ main = do
     -- Container for all balls.
     let numNew = 10
     balls <- newMVar []
-    
+
+    newBall space balls
+
     -- The WindowConfig type is special for the underlying graphics system and
     -- provides handlers for frame drawing, key and mouse events. It's not
     -- important for the physic simulation.
@@ -61,15 +63,15 @@ main = do
                     -- before the DnD?
                     moldp <- takeMVar dragpos
                     putMVar dragpos (Just p)
-                    let vel = case moldp of 
+                    let vel = case moldp of
                                 Nothing   -> Vector 0 0
                                 Just oldp -> scale (p-oldp) fps'
                     velocity b $= vel
                     position b $= p
 
-            -- Draw borders in red. 
+            -- Draw borders in red.
             color $ Color3 1 0 (0 :: GLdouble)
-            renderPrimitive Lines $ 
+            renderPrimitive Lines $
                 forM_ borders $ \(s, e) -> do
                     toVertex s
                     toVertex e
@@ -79,7 +81,7 @@ main = do
             forM_ bs $ \(b, c, r) -> do
                 Vector x y <- get $ position (body b)
                 circle (x, y) r c
-            
+
             -- Draw fps statistics, if enabled and calculate new position.
             drawFPS fpsStat (Just $ "Objects: " ++ show (length bs))
 
@@ -88,7 +90,7 @@ main = do
             step space (1.0/fps')
 
         -- Key handling.
-      , keyHandler = Just $ KeyHandler $ \key state _ -> 
+      , keyHandler = Just $ KeyHandler $ \key state _ ->
             when (state == Down) $
             case key of
                 Char 'c'   -> clearSpace space balls
@@ -96,7 +98,7 @@ main = do
                 SpecialKey KeyLeft -> gravity space $= Vector (-0.7) (-0.7)
                 SpecialKey KeyDown -> gravity space $= Vector (-0.0) (-1)
                 SpecialKey KeyRight-> gravity space $= Vector ( 0.7) (-0.7)
-                SpecialKey KeyUp-> gravity space $= Vector 0 0.1 
+                SpecialKey KeyUp-> gravity space $= Vector 0 0.1
                 Char 'v'   -> newBigBall space balls
                 Char 'f'   -> toggleFPS fpsStat
                 Char '\27' -> leaveMainLoop
@@ -106,7 +108,7 @@ main = do
       , motionHandler = Just $ MotionHandler (moveBall drag)
       , title         = "Ball simulation with Chipmunk in Haskell"
       , size          = Size 640 480
-      , fps           = 30
+      , fps           = 90
     }
     windowLoop wc
 
@@ -119,7 +121,7 @@ type Balls = MVar [(Shape, Color3 GLdouble, Double)]
 border :: Space -> ((Double, Double), (Double, Double)) -> IO ()
 border space ((x1,y1), (x2,y2)) = do
     ground <- newBody infinity infinity
-    gshape <- newShape ground (LineSegment (Vector x1 y1) (Vector x2 y2) 0.01) 
+    gshape <- newShape ground (LineSegment (Vector x1 y1) (Vector x2 y2) 0.01)
                (Vector 0.0 0.0)
     position ground   $= Vector 0.0 0.00
     elasticity gshape $= 0.5
@@ -128,18 +130,18 @@ border space ((x1,y1), (x2,y2)) = do
 
 
 -- | Create a new ball with random velocity, position around 0.6 on the x-axis
-newBall :: Space -> Balls -> IO () 
+newBall :: Space -> Balls -> IO ()
 newBall space balls = do
         x         <- randomRIO (0.5, 0.7) :: IO CpFloat
         maxRadius <- randomRIO (0.01, 0.03) :: IO Double
         rad       <- randomRIO (0.001, maxRadius) :: IO Double
         vel       <- randomPoint (-0.8, 0.8)
 
-        ball space balls 100 (x, 0.7) vel rad   
+        ball space balls 100 (x, 0.7) vel rad
 
 
 -- | Creates a new heavy ball.
-newBigBall :: Space -> Balls -> IO () 
+newBigBall :: Space -> Balls -> IO ()
 newBigBall space balls = ball space balls 100000 (0.65, 0.95) (0,0) 0.05
 
 
@@ -156,7 +158,7 @@ ball space balls m pos vel rad = do
     position b $= uncurry Vector pos
     velocity b $= uncurry Vector vel
     spaceAdd space b
-    
+
     -- Shape.
     bshape <- newShape b (Circle $ unsafeCoerce rad) (Vector 0 0)
     elasticity bshape    $= 0.9
@@ -185,14 +187,14 @@ moveBall mv (Position pos) = do
   where p2v (x,y) = Vector (unsafeCoerce x) (unsafeCoerce y)
 
 
-clickBall :: Space -> MVar (Maybe (Body, Vector)) -> MouseButton -> Position 
+clickBall :: Space -> MVar (Maybe (Body, Vector)) -> MouseButton -> Position
   -> IO ()
 clickBall space mv _ (Position pos) = do
     v <- takeMVar mv
     case v of
         Nothing -> do
             shs <- spaceQueryList space (p2v pos) (-1) 0
-            if null shs 
+            if null shs
                 then putMVar mv Nothing
                 else do
                     let b = body (head shs)
